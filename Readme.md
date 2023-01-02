@@ -3,7 +3,7 @@
 This converter takes a dictionary in Lingvo DSL format and converts
 to MOBI dictionary format, suitable for Kindle and Mobipocket Reader.
 
-This a fork of Tvangeste's **dsl2mobi** from https://github.com/Tvangeste/dsl2mobi
+This is a fork of Tvangeste's **dsl2mobi** from https://github.com/Tvangeste/dsl2mobi
 
 ## What's new
 
@@ -141,7 +141,7 @@ Kindle popup dictionary has rather small window for displaying a dictionary card
 
 DSL dictionaries, on the other hand, tend to use lists and sublists extensively.
 
-Consider the following to examples - the first as-is and the second with `-t -m`
+Consider the following example - the first variant is as-is and the second one is with `-t -m` option
 
 **As-is**:
 
