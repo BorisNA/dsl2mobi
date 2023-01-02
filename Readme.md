@@ -7,6 +7,8 @@ This a fork of Tvangeste's **dsl2mobi** from https://github.com/Tvangeste/dsl2mo
 
 ## What's new
 
+### dsl2mobi code
+
 New and/or changed features in this fork:
 
 1. Small fixes for new Ruby (ERB constructor)
@@ -32,6 +34,13 @@ New and/or changed features in this fork:
 
 	Split the resulting html by the specified amount of lines. Useful when one needs to parse/process html (10K lines ~ 5MB html) and helps mobigen/kindlegen a little.
 
+### wordforms
+
+1. Added a new German inflections list. Generated with `dump2morpho.py` script from the dump from http://danielnaber.de/morphologie/ 
+
+   Use with the `-w wordforms/forms_DE_morph.txt` option
+   
+2. Ukrainian inflection list. `forms-UK.txt`
 
 ## Dependencies 
 
