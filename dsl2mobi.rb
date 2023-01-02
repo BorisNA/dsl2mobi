@@ -23,7 +23,7 @@ CARDS = {}
 HWDS = Set.new
 cards_list = []
 
-$VERSION = '1.2-dev'
+$VERSION = '1.3-NB'
 $FAST = false
 $FORCE = false
 $NORMALIZE_TAGS = true
@@ -36,15 +36,22 @@ $DSL_FILE = nil
 $HTML_ONLY = false
 $OUT_DIR = "."
 $IN = nil
+$HEADER = true
+$OLDINFL = false
+$MERGEBODY = false
+$SPLIT = false
+$REF2INFL = false
 
 # Need more data for other languages as well
 $LANG_MAP = {
   "English" => "en",
   "Russian" => "ru",
   "GermanNewSpelling" => "de",
+  "German" => "de",
   "French" => "fr",
   "Polish" => "pl",
-  "Chinese" => 'zh'
+  "Chinese" => "zh",
+  "Ukrainian" => "uk"
 }
 
 opts = OptionParser.new
@@ -97,7 +104,7 @@ opts.on("-a", "--refarrow true/false", "put arrows before links (default: true)"
   $stderr.puts "Reference arrows: #{$HREF_ARROWS}"
 }
 
-opts.on("-t", "--htmlonly true/false", "produce HTML only (default: false)") { |val|
+opts.on("--htmlonly true/false", "produce HTML only (default: false)") { |val|
   $HTML_ONLY = !!(val =~ /(true|1|on)/i)
   $stderr.puts "Generate HTML only: #{$HTML_ONLY}"
 }
@@ -106,8 +113,30 @@ opts.on("-f", "--force", "overwrite existing files") { |val|
   $FORCE = true
 }
 
-opts.on("-s", "--sample", "generate small sample") { |val|
+opts.on("--sample", "generate small sample") { |val|
   $FAST = true
+}
+
+
+opts.on("-t", "--no-title", "do not add card title (header)") { |val|
+  $HEADER = false
+}
+
+opts.on("-d", "--old-infl", "use old inflection method to allow inflection duplicates on lookup") { |val|
+  $OLDINFL = true
+}
+
+opts.on("-m", "--merge-body", "merge all body lines to m0") { |val|
+  $MERGEBODY = true
+}
+
+opts.on("-r", "--refs-to-infl", "add all card refs to infections") { |val|
+  $REF2INFL = true
+}
+
+opts.on("-s [LINES]", "--split [LINES]", "split output file by LINES lines (default 10000)") { |val|
+  $SPLIT = true
+  $SPLIT_SIZE = val ? val.to_i : 10000;
 }
 
 opts.separator ""
@@ -146,6 +175,8 @@ $stderr.puts "INFO: Russian headwords transliteration: #{$TRANSLITERATE}"
 $stderr.puts "INFO: Chinese headwords transliteration (Penyin): #{$PENYIN}"
 $stderr.puts "INFO: DSL Tags normalization: #{$NORMALIZE_TAGS}"
 $stderr.puts "INFO: Reference arrows in HTML: #{$HREF_ARROWS}"
+$stderr.puts "INFO Splitting by #{$SPLIT_SIZE} lines" if $SPLIT
+
 
 $ARROW = ($HREF_ARROWS ? "↑" : "")
 
@@ -169,57 +200,16 @@ class Card
     }
   end
   
-  def print_out_single(hwd, io)
-    if (@body.empty?)
-      $stderr.puts "ERROR: Body empty, possibly original file contains multiple headwords for the same card: #{hwd}"
-      $stderr.puts "Make sure that there is only one headword for each card no the DSL!"
-      exit
-    end
-
-    io.puts %Q{<a name="\##{href_hwd(hwd)}"/>}
-    io.puts '<idx:entry name="word" scriptable="yes">'
-    io.print %Q{<font size="6" color="#002984"><b><idx:orth>}
-    io.puts clean_hwd_to_display(hwd)
-    
-    hwd = clean_hwd(hwd)
-
-    # inflections (word forms)
-    if hwd !~ /[-\.'\s]/
-      if (FORMS[hwd]) # got some inflections
-        forms = FORMS[hwd].flatten.uniq
-
-        # delete forms that explicitly exist in the dictionary
-        forms = forms.delete_if {|form| HWDS.include?(form)}
-
-        if (forms.size > 0)
-          io.puts "<idx:infl>"
-          forms.each { |form| io.puts %Q{    <idx:iform value="#{form}"/>} }
-          io.puts "</idx:infl>"
-        end
-
-        # $stderr.puts "HWD: #{hwd} -- #{FORMS[hwd].flatten.uniq.join(', ')}"
-      end
-    end
-
-    io.puts "</idx:orth></b></font>"
-
-    if ($TRANSLITERATE)
-        trans = transliterate(hwd)
-        if (trans != hwd)
-          io.puts %Q{<idx:orth value="#{trans.gsub(/"/, '')}"/>}
-        end
-    end
-    
-    if ($PENYIN)
-        trans = Pinyin.t(hwd, '')
-        if (trans != hwd)
-          io.puts %Q{<idx:orth value="#{trans.gsub(/"/, '')}"/>}
-        end
-    end
-    
-
+  def my_body_is_ready( body_arr )
+    # body_arr - array of raw body lines
+    # returns tuple [ body_str, hwds ]
+    #    body_str - formatted html string to print out
+    #    hwds - a list of headwords to add to infections (from refs in the body)
     # handle body
-    @body.each { |line|
+    
+    hwds = Set.new()
+    
+    body_str = body_arr.map { |line|
       line = line.dup
       indent = 0
       m = line.match(/^\[m(\d+)\]/)
@@ -343,20 +333,122 @@ class Card
       line.gsub!('+_-_+LBRACKET+_-_+', '[')
       line.gsub!('+_-_+RBRACKET+_-_+', ']')
 
+      # brack entites?
+      line.gsub!('&lbrack;', '[')
+      line.gsub!('&rbrack;', ']')
+
       # unquote any symbol when \ is before it
       line.gsub!('+_-_+', '')
 
       # handle ref and {{ }} tags (references)
       line.gsub!(/(?:↑\s*)?\[ref(?:\s+dict="(.*?)")?\s*\](.*?)\[\/ref\]/) do |match|
         # $stderr.puts "#{$1} -- #{$2}"
+        
+        hwds.add( $2 )
+        
         %Q{#{$ARROW} <a href="\##{href_hwd($2)}">#{$2}</a>}
       end
 
-      io.puts %Q{<div class="dsl_m#{indent}">#{line}</div>}
-    }
+      if $MERGEBODY
+        %Q{#{line}}
+      else
+        %Q{<div class="dsl_m#{indent}">#{line}</div>}
+      end
+    }.join( $MERGEBODY ? " " : "\n" )
+    
+    if $MERGEBODY
+        body_str = %Q{<div class="dsl_m0">#{body_str}</div>}
+    end
+
+    return body_str, hwds
+  end
+  
+  def print_out_single(hwd, io)
+    if (@body.empty?)
+      $stderr.puts "ERROR: Body empty, possibly original file contains multiple headwords for the same card: #{hwd}"
+      $stderr.puts "Make sure that there is only one headword for each card no the DSL!"
+      exit
+    end
+
+    # We need to generate body line first since it will populate additional hrefs->infls
+    body_str, add_hwds = my_body_is_ready( @body )
+
+    if not $REF2INFL
+        # Do not use additional infections
+        add_hwds = Set.new()
+    end
+
+    # #0 Prestrip headword etc
+    hwd_ref = clean_hwd(hwd)
+    hwd_puts = $HEADER ? clean_hwd_to_display(hwd) : ""
+
+
+    infl_old_str = ""
+    infl_new_str = ""
+    # #1 Prepare infl patterns (old and new - depending on options)
+    if( $OLDINFL )
+        ## $stderr.puts "DEBUG: add hwds '#{add_hwds}'"
+        ## t = FORMS[hwd_ref]&.union(add_hwds.to_a)&.flatten&.uniq()
+        ## $stderr.puts "DEBUG: FORMS '#{t}'"
+        forms = FORMS[hwd_ref]&.union(add_hwds.to_a)&.flatten&.uniq&.join(",")
+        if( forms )
+            infl_old_str = " infl=\"" + forms + "\""
+        end
+    else
+    
+        # "new" inflections (word forms)
+        if hwd_ref !~ /[-\.'\s]/ and FORMS[hwd_ref]  # got some inflections
+            forms = FORMS[hwd_ref]&.union(add_hwds.to_a)&.flatten&.uniq
+            if( forms )
+                # delete forms that explicitly exist in the dictionary
+                forms = forms.delete_if {|form| HWDS.include?(form)}
+
+                if (forms.size > 0)
+                    infl_new_str = "  <idx:infl>\n" +
+                    forms.map { |el| "    <idx:iform value=\"#{el}\"/>" }.join("\n") +
+                        "\n  </idx:infl>\n"
+                end
+            end
+
+            # $stderr.puts "HWD: #{hwd} -- #{FORMS[hwd].flatten.uniq.join(', ')}"
+        end
+    end
+    
+    # #2 Prepare entry header
+    entry_str = %Q{
+<a name="\##{href_hwd(hwd_ref)}"/>
+<idx:entry name="word" scriptable="yes">
+<idx:orth value="#{hwd_ref}" #{infl_old_str}><font size="6" color="#002984"><b>#{hwd_puts}</b></font>
+#{infl_new_str}</idx:orth>
+}.strip
+
+
+    # #3 Write entry header
+    io.puts ""
+    io.puts entry_str
+
+
+    if ($TRANSLITERATE)
+        trans = transliterate(hwd)
+        if (trans != hwd)
+          io.puts %Q{<idx:orth value="#{trans.gsub(/"/, '')}"/>}
+        end
+    end
+    
+    if ($PENYIN)
+        trans = Pinyin.t(hwd, '')
+        if (trans != hwd)
+          io.puts %Q{<idx:orth value="#{trans.gsub(/"/, '')}"/>}
+        end
+    end
+    
+
+    io.puts body_str
 
     # handle end of card
     io.puts "</idx:entry>"
+    io.puts ""
+    
     io.puts %Q{<div>\n  <img hspace="0" vspace="0" align="middle" src="padding.gif"/>}
     io.puts %Q{  <table width="100%" bgcolor="#992211"><tr><th widht="100%" height="2px"></th></tr></table>\n</div>}
   end
@@ -515,22 +607,31 @@ end
 
 $stderr.puts "INFO: Generating only a small sample..." if $FAST
 
-# Calculate where to save the HTML file:
-out_file = File.join($OUT_DIR, get_base_name + '.html')
-if File.exist?(out_file)
-  $stderr.print "WARNING: Output file already exists: \"#{out_file}\". "
-  if $FORCE
-    $stderr.puts "OVERWRITING!"
-  else
-    $stderr.puts "Use --force to overwrite."
-    exit
-  end
-end
 
 card = nil
 first = true
 ishwd = false
+
+fileno = 0
+FILES = [] # Array of filenames to make OPF
+
 File.open($DSL_FILE, read_mode) do |f|
+
+  while ! f.eof?
+
+  # 1. Create output file name
+  out_file = File.join($OUT_DIR, get_base_name + '_' + fileno.to_s + '.html')
+  if File.exist?(out_file)
+    $stderr.print "WARNING: Output file already exists: \"#{out_file}\". "
+    if $FORCE
+      $stderr.puts "OVERWRITING!"
+    else
+      $stderr.puts "Use --force to overwrite."
+      exit
+    end
+  end
+
+  FILES << File.basename(out_file)
 
   $stderr.puts "Generating HTML: #{out_file}"
   File.open(out_file, "w+") do |out|
@@ -539,7 +640,7 @@ File.open($DSL_FILE, read_mode) do |f|
     # TODO: get the info from the DSL file
     title = $TITLE
     subtitle = "Generated by Dsl2Mobi-#{$VERSION}"
-    html_header = ERB.new(HTML_HEADER_TEMPLATE, 0, "%<>")
+    html_header = ERB.new(HTML_HEADER_TEMPLATE, trim_mode: "%<>")
     out.puts html_header.result(binding)
 
     while (line = f.gets)         # read every line
@@ -566,8 +667,10 @@ File.open($DSL_FILE, read_mode) do |f|
           card.print_out(out) if card # print out the previous card
           ishwd = true # current line is headword  
           $count += 1
-          break if ($count == 1000 && $FAST)
           card = Card.new(hwd)
+
+          break if ($count == 1000 && $FAST)
+          break if ($SPLIT && $count == $SPLIT_SIZE)
           #CARDS[hwd] = card
           #cards_list << card
         end
@@ -578,12 +681,17 @@ File.open($DSL_FILE, read_mode) do |f|
     end
 
     # don't forget the very latest card!
-    card.print_out(out) if card
+    card&.print_out(out) if ( not ishwd && card )
 
     # end of HTML
     out.puts "</body>"
     out.puts "</html>"
+    
+    fileno += 1
+    $count = 0 
+    
   end
+  end # while not EOF
 end
 
 # copy CSS and image files
@@ -628,7 +736,7 @@ File.open(opf_file, "w+") do |out|
   end
 
   description = "Generated by Dsl2Mobi-#{$VERSION} on #{Date.today.to_s}."
-  html_file = File.basename(out_file)
-  opf_content = ERB.new(OPF_TEMPLATE, 0, "%<>")
+  # Iterates over FILE
+  opf_content = ERB.new(OPF_TEMPLATE, trim_mode: "%<>")
   out.puts opf_content.result(binding)
 end
