@@ -45,12 +45,16 @@ OPF_TEMPLATE =%q{<?xml version="1.0"?><!DOCTYPE package SYSTEM "oeb1.ent">
 
     <!-- list of all the files needed to produce the .mobi file -->
     <manifest>
-      <item id="dictionary0" media-type="text/x-oeb1-document" href="<%= html_file %>"></item>
+      <% FILES.each { |filename| %>
+      <item id="<%= filename %>" media-type="text/x-oeb1-document" href="<%= filename %>"></item>
+      <% } %>
     </manifest>
 
     <!-- list of the html files in the correct order  -->
     <spine>
-      <itemref idref="dictionary0"/>
+      <% FILES.each { |filename| %>
+      <itemref idref="<%= filename %>"/>
+      <% } %>
     </spine>
 
     <tours/>
