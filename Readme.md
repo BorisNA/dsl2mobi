@@ -5,6 +5,8 @@ to MOBI dictionary format, suitable for Kindle and Mobipocket Reader.
 
 This is a fork of Tvangeste's **dsl2mobi** from https://github.com/Tvangeste/dsl2mobi
 
+Wordforms (morphology lists) are **moved** to the standalone repository https://github.com/BorisNA/wordforms and will be deleted here soon
+
 ## What's new
 
 ### dsl2mobi code
@@ -36,11 +38,13 @@ New and/or changed features in this fork:
 
 ### wordforms
 
-1. Added a new German inflections list. Generated with `dump2morpho.py` script from the dump from http://danielnaber.de/morphologie/ 
+0. Wordforms moved to the standalone repository https://github.com/BorisNA/wordforms 
 
-   Use with the `-w wordforms/forms_DE_morph.txt` option
+1. ~A new German inflections list. Generated with `dump2morpho.py` script from the dump from http://danielnaber.de/morphologie/~ 
+
+   ~Use with the `-w wordforms/forms_DE_morph.txt` option~
    
-2. Ukrainian inflection list. `forms-UK.txt`
+2. ~Ukrainian inflection list. `forms-UK.txt`~
 
 ## Dependencies 
 
